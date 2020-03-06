@@ -33,8 +33,8 @@ from transformers import (
 # _infer_one_batch
 # CLASSES
 
-class EnsembleInferer:
 
+class EnsembleInferer:
     def __init__(self, params, dataloader):
         self.dataloader = dataloader
         self.params = params
@@ -53,28 +53,32 @@ class EnsembleInferer:
         with torch.no_grad():
             xb, mb, _, yb = tuple(t.to(self.params["device"]) for t in batch)
             for i, model in enumerate(models):
-                outputs = model['model'](input_ids=xb, attention_mask=mb, labels=yb)
+                outputs = model["model"](input_ids=xb, attention_mask=mb, labels=yb)
                 proba = torch.nn.functional.softmax(outputs[1], dim=1)
                 if i == 0:
                     self.nv_conf.append(torch.max(proba, dim=1)[0].cpu().numpy())
-                    self.nv_pred.append(proba[:,-1].cpu().numpy())
-                probas.append(proba[:,-1].cpu().numpy())
+                    self.nv_pred.append(proba[:, -1].cpu().numpy())
+                probas.append(proba[:, -1].cpu().numpy())
             probas = torch.cat(probas, dim=1)
-            assert probas[0,0] != probas[0,1], "Make sure models were trained with different seeds"
+            assert (
+                probas[0, 0] != probas[0, 1]
+            ), "Make sure models were trained with different seeds"
             self.ens_pred.append(probas.mean(dim=1).cpu().numpy())
             self.ens_conf.append(probas.std(dim=1).cpu().numpy())
             self.obs.append(yb.cpu().numpy())
 
     def _aggregate_results(self, pred_cutoff=0.5):
-	df = pd.DataFrame({
-            'nv_conf': np.concatenate(self.nv_conf), 
-            'nv_pred': np.concatenate(self.nv_pred),
-            'ens_pred': np.concatenate(self.ens_pred), 
-            'ens_conf': np.concatenate(self.ens_conf),
-            'obs': np.concatenate(self.obs)
-        })
-        df['nv_pred_cls'] = (df['nv_pred'] > pred_cutoff).astype(int)
-        df['ens_pred_cls'] = (df['ens_pred'] > pred_cutoff).astype(int)
+        df = pd.DataFrame(
+            {
+                "nv_conf": np.concatenate(self.nv_conf),
+                "nv_pred": np.concatenate(self.nv_pred),
+                "ens_pred": np.concatenate(self.ens_pred),
+                "ens_conf": np.concatenate(self.ens_conf),
+                "obs": np.concatenate(self.obs),
+            }
+        )
+        df["nv_pred_cls"] = (df["nv_pred"] > pred_cutoff).astype(int)
+        df["ens_pred_cls"] = (df["ens_pred"] > pred_cutoff).astype(int)
         self.results = df
 
 
@@ -114,9 +118,9 @@ class Experiment:
         exp_start = time.time()
         for data_size in self.data_sizes:
             print("\n")
-            print("-" * 102)
+            print("-" * 95)
             print(f"Experiment {exp_i}/{exp_n}: n = {data_size}...")
-            print("-" * 102)
+            print("-" * 95)
             for _ in range(self.n_seeds):
                 params["n"] = data_size
                 params["seed"] = random.randint(1, 1000)
@@ -261,7 +265,7 @@ class Trainer:
             f'Training {self.params["model_name"]} with lr = {self.params["lr"]},'
             + f'bs = {self.params["bs"]}, n = {self.params["n"]}'
         )
-        print("-" * 102)
+        print("-" * 95)
         self.lc = Losses()
         self.mc = Metrics(self.params["task"], self.params["metric_name"])
 
@@ -312,7 +316,7 @@ class Trainer:
             + f'| {self.params["metric_name"].upper()}: {train_acc:.3f} (T) {val_acc:.3f} (V) '
             + f"| LR: {lr:02.2} | Time: {time.time() - self.epoch_start:5.2f}s "
         )
-        print("-" * 102)
+        print("-" * 95)
         if self.early_stopping.stop:
             print(
                 f"Model stopped improving after epoch {self.early_stopping.best_epoch}"
