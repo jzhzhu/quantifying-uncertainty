@@ -27,13 +27,84 @@ from transformers import (
 )  # replace
 
 
+# make this inherit from Uncertainty class with
+# _aggregate_results
+# _run_inference
+# _infer_one_batch
+# CLASSES
+
+class EnsembleInferer:
+
+    def __init__(self, params, dataloader):
+        self.dataloader = dataloader
+        self.params = params
+        self.ens_pred = []
+        self.ens_conf = []
+        self.obs = []
+
+    def run_inference(self, models):
+        model.eval()
+        for batch in self.dataloader:
+            self._infer_one_batch(batch, models)
+        self._aggregate_results()
+
+    def _infer_one_batch(self, batch, models):
+        probas = []
+        with torch.no_grad():
+            xb, mb, _, yb = tuple(t.to(self.params["device"]) for t in batch)
+            for i, model in enumerate(models):
+                outputs = model['model'](input_ids=xb, attention_mask=mb, labels=yb)
+                proba = torch.nn.functional.softmax(outputs[1], dim=1)
+                if i == 0:
+                    self.nv_conf.append(torch.max(proba, dim=1)[0].cpu().numpy())
+                    self.nv_pred.append(proba[:,-1].cpu().numpy())
+                probas.append(proba[:,-1].cpu().numpy())
+            probas = torch.cat(probas, dim=1)
+            assert probas[0,0] != probas[0,1], "Make sure models were trained with different seeds"
+            self.ens_pred.append(probas.mean(dim=1).cpu().numpy())
+            self.ens_conf.append(probas.std(dim=1).cpu().numpy())
+            self.obs.append(yb.cpu().numpy())
+
+    def _aggregate_results(self, pred_cutoff=0.5):
+	df = pd.DataFrame({
+            'nv_conf': np.concatenate(self.nv_conf), 
+            'nv_pred': np.concatenate(self.nv_pred),
+            'ens_pred': np.concatenate(self.ens_pred), 
+            'ens_conf': np.concatenate(self.ens_conf),
+            'obs': np.concatenate(self.obs)
+        })
+        df['nv_pred_cls'] = (df['nv_pred'] > pred_cutoff).astype(int)
+        df['ens_pred_cls'] = (df['ens_pred'] > pred_cutoff).astype(int)
+        self.results = df
+
+
+class EnsembleTrainer:
+    """
+    Trains multiple models for inference.`
+    """
+
+    def __init__(self, n_models):
+        self.n_models = n_models
+        self.models = []
+
+    def run(self, params):
+        dp = DataProcessor(params)
+        for i in range(self.n_models):
+            params["seed"] = random.randint(1, 1000)
+            set_seed(params["seed"])
+            trainer_i = Trainer(params, dp, *get_training_objects(params))
+            trainer_i.fit()
+            self.models.append({"model": trainer_i.model, "seed": params["seed"]})
+            print(f"{i+1}/{self.n_models} models (seed={params['seed']})")
+
+
 class Experiment:
     """
     Runs an experiment on a given modeling parameter (i.e. data size) and saves results
     """
 
     def __init__(self, data_sizes, n_seeds, experiment_name):
-        self.data_sizes = data_sizes
+        self.data_sizes = data_sizesza
         self.n_seeds = n_seeds
         self.results_file = experiment_name + ".json"
 
